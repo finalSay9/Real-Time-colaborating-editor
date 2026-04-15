@@ -1,0 +1,71 @@
+# docker-compose.dev.yml
+# Overrides for local development: hot reload, source mounts, debug ports
+
+version: '3.9'
+
+services:
+
+  api-gateway:
+    build:
+      target: development      # Use the dev stage in the Dockerfile
+    command: npx ts-node-dev --respawn src/index.ts
+    volumes:
+      - ./services/api-gateway/src:/app/src          # Hot reload
+      - ./packages:/app/../../packages                # Live shared packages
+    environment:
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+      - "9229:9229"            # Node.js debugger port — attach VS Code debugger here
+
+  auth-service:
+    build:
+      target: development
+    command: npx ts-node-dev --respawn src/index.ts
+    volumes:
+      - ./services/auth-service/src:/app/src
+      - ./packages:/app/../../packages
+    environment:
+      NODE_ENV: development
+    ports:
+      - "3001:3001"            # Expose in dev so you can hit it directly with Postman
+      - "9230:9229"
+
+  collaboration-service:
+    build:
+      target: development
+    command: npx ts-node-dev --respawn src/index.ts
+    volumes:
+      - ./services/collaboration-service/src:/app/src
+      - ./packages:/app/../../packages
+    environment:
+      NODE_ENV: development
+    ports:
+      - "3002:3002"
+      - "9231:9229"
+
+  document-service:
+    build:
+      target: development
+    command: npx ts-node-dev --respawn src/index.ts
+    volumes:
+      - ./services/document-service/src:/app/src
+      - ./packages:/app/../../packages
+    environment:
+      NODE_ENV: development
+    ports:
+      - "3003:3003"
+      - "9232:9229"
+
+  presence-service:
+    build:
+      target: development
+    command: npx ts-node-dev --respawn src/index.ts
+    volumes:
+      - ./services/presence-service/src:/app/src
+      - ./packages:/app/../../packages
+    environment:
+      NODE_ENV: development
+    ports:
+      - "3004:3004"
+      - "9233:9229"
