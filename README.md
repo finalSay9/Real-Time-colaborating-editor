@@ -248,3 +248,7 @@ Feel free to fork, improve, and submit pull requests.
 # 📄 License
 
 MIT License
+
+To make this concrete, here's what happens when you type the letter "A" into a document:
+Your browser sends the edit over WebSocket to the collaboration service. Yjs transforms it against any concurrent edits (CRDT magic). The collab service publishes the transformed edit to all other connected clients via Redis Pub/Sub — this reaches users on other server instances instantly. It also publishes a document.changed event to Kafka. The document service consumes that Kafka event and decides whether enough changes have accumulated to save a new snapshot to PostgreSQL. Prometheus records that one more edit was processed. OpenTelemetry records the full span of the operation with the traceId. Grafana updates its "edits per second" graph. All of this happens in under 50 milliseconds.
+That's the whole system. Every technology has one clear job, and they hand off to each other in a clear sequence.
