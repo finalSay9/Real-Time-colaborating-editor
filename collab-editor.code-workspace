@@ -1,0 +1,21 @@
+{
+  "folders": [
+    { "name": "Root", "path": "." },
+    { "name": "Gateway", "path": "services/api-gateway" },
+    { "name": "Auth", "path": "services/auth-service" },
+    { "name": "Collaboration", "path": "services/collaboration-service" },
+    { "name": "Document", "path": "services/document-service" },
+    { "name": "Presence", "path": "services/presence-service" },
+    { "name": "Client", "path": "client" },
+    { "name": "Shared Types", "path": "packages/shared-types" }
+  ],
+  "settings": {
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/dist": true
+    }
+  }
+}
