@@ -4,10 +4,10 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
-import Placeholder from '@tiptap/extension-placeholder'
+import Placeholder from '@tiptap/react/ext'
 import axios from 'axios'
-import { useAuthStore } from '@/store/authStore'
-import { useCollaboration } from '@/hooks/useCollaboration'
+import { useAuthStore } from '../store/authStore'
+import { useCollaboration } from '../hooks/useCollaboration'
 import {
   ArrowLeft, Users, Wifi, WifiOff,
   Bold, Italic, List, Heading2

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { useAuthStore } from '@/store/authStore'
-import { Button } from '@/components/ui/Button'
+import { useAuthStore } from '../store/authStore'
+import { Button } from '../components/ui/Button'
 import {
   FileText, Plus, LogOut, Clock,
   Users, ChevronRight, Loader2

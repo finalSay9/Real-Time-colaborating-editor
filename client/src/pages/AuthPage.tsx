@@ -1,8 +1,8 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '@/store/authStore'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { useAuthStore } from '../store/authStore'
+import { Button } from '../components/ui/Button'
+import { Input } from '../components/ui/Input'
 import { FileText } from 'lucide-react'
 
 export default function AuthPage() {
