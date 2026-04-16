@@ -1,43 +1,43 @@
-# docker-compose.dev.yml
-# Overrides for local development: hot reload, source mounts, debug ports
-
-version: '3.9'
-
 services:
-
   api-gateway:
     build:
-      target: development      # Use the dev stage in the Dockerfile
-    command: npx ts-node-dev --respawn src/index.ts
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+      target: development
+    command: sh -c "cd /app/services/api-gateway && npx ts-node-dev --respawn --transpile-only src/index.ts"
     volumes:
-      - ./services/api-gateway/src:/app/src          # Hot reload
-      - ./packages:/app/../../packages                # Live shared packages
+      - ./services/api-gateway/src:/app/services/api-gateway/src
+      - ./packages:/app/packages
     environment:
       NODE_ENV: development
     ports:
       - "3000:3000"
-      - "9229:9229"            # Node.js debugger port — attach VS Code debugger here
+      - "9229:9229"
 
   auth-service:
     build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
       target: development
-    command: npx ts-node-dev --respawn src/index.ts
+    command: sh -c "cd /app/services/auth-service && npx ts-node-dev --respawn --transpile-only src/index.ts"
     volumes:
-      - ./services/auth-service/src:/app/src
-      - ./packages:/app/../../packages
+      - ./services/auth-service/src:/app/services/auth-service/src
+      - ./packages:/app/packages
     environment:
       NODE_ENV: development
     ports:
-      - "3001:3001"            # Expose in dev so you can hit it directly with Postman
+      - "3001:3001"
       - "9230:9229"
 
   collaboration-service:
     build:
+      context: .
+      dockerfile: services/collaboration-service/Dockerfile
       target: development
-    command: npx ts-node-dev --respawn src/index.ts
+    command: sh -c "cd /app/services/collaboration-service && npx ts-node-dev --respawn --transpile-only src/index.ts"
     volumes:
-      - ./services/collaboration-service/src:/app/src
-      - ./packages:/app/../../packages
+      - ./services/collaboration-service/src:/app/services/collaboration-service/src
+      - ./packages:/app/packages
     environment:
       NODE_ENV: development
     ports:
@@ -46,11 +46,13 @@ services:
 
   document-service:
     build:
+      context: .
+      dockerfile: services/document-service/Dockerfile
       target: development
-    command: npx ts-node-dev --respawn src/index.ts
+    command: sh -c "cd /app/services/document-service && npx ts-node-dev --respawn --transpile-only src/index.ts"
     volumes:
-      - ./services/document-service/src:/app/src
-      - ./packages:/app/../../packages
+      - ./services/document-service/src:/app/services/document-service/src
+      - ./packages:/app/packages
     environment:
       NODE_ENV: development
     ports:
@@ -59,11 +61,13 @@ services:
 
   presence-service:
     build:
+      context: .
+      dockerfile: services/presence-service/Dockerfile
       target: development
-    command: npx ts-node-dev --respawn src/index.ts
+    command: sh -c "cd /app/services/presence-service && npx ts-node-dev --respawn --transpile-only src/index.ts"
     volumes:
-      - ./services/presence-service/src:/app/src
-      - ./packages:/app/../../packages
+      - ./services/presence-service/src:/app/services/presence-service/src
+      - ./packages:/app/packages
     environment:
       NODE_ENV: development
     ports:
