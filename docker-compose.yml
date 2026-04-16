@@ -1,7 +1,7 @@
 # docker-compose.yml — BASE FILE
 # Runs all infrastructure and services in production-like mode
 
-version: '3.9'
+
 
 networks:
   collab-net:
@@ -65,6 +65,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
