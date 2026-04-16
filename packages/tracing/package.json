@@ -1,0 +1,19 @@
+{
+  "name": "@collab-editor/tracing",
+  "version": "1.0.0",
+  "description": "OpenTelemetry tracing setup shared across services",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.7.0",
+    "@opentelemetry/sdk-node": "^0.45.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.40.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}
