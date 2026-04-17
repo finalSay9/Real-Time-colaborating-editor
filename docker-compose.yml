@@ -50,7 +50,8 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+      start_period: 30s 
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -65,7 +66,7 @@ services:
       test: ["CMD", "nc", "-z", "localhost", "2181"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
       start_period: 30s
 
   kafka:
@@ -94,6 +95,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
+      start_period: 30s 
 
   kafka-init:
     # One-shot container that creates all Kafka topics then exits
@@ -121,13 +123,15 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
     ports:
-      - "3000:3000"   # The ONLY service exposed to the outside world
+      - "3000:3000"
+    
+       # The ONLY service exposed to the outside world
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - collab-net
-    restart: unless-stopped
+    restart: on-failure 
 
   auth-service:
     build:
@@ -143,7 +147,7 @@ services:
         condition: service_healthy
     networks:
       - collab-net   # NOT exposed to host — only reachable via gateway
-    restart: unless-stopped
+    restart: on-failure 
 
   collaboration-service:
     build:
@@ -161,7 +165,7 @@ services:
         condition: service_completed_successfully
     networks:
       - collab-net
-    restart: unless-stopped
+    restart: on-failure 
 
   document-service:
     build:
@@ -178,7 +182,7 @@ services:
         condition: service_completed_successfully
     networks:
       - collab-net
-    restart: unless-stopped
+    restart: on-failure 
 
   presence-service:
     build:
@@ -193,4 +197,4 @@ services:
         condition: service_healthy
     networks:
       - collab-net
-    restart: unless-stopped
+    restart: on-failure 
