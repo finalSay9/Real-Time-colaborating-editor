@@ -1,7 +1,7 @@
 import 'dotenv/config'   // ← must be first, before any other imports
 import express from 'express'
 import { createTables } from './db/userRepository'
-import { createLogger } from '@/collab/logger'
+import { createLogger } from '@collab/logger'
 import registerRoute from './routes/register'
 import loginRoute from './routes/login'
 

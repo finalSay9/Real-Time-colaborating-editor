@@ -1,6 +1,6 @@
 import express from 'express'
 import { Redis } from 'ioredis'
-import { createLogger } from '@collab/logger'
+import { createLogger }  from '@collab/logger'
 
 const app = express()
 const logger = createLogger('presence-service')
