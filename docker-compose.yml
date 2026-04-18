@@ -1,21 +1,4 @@
-# docker-compose.yml — BASE FILE
-# Runs all infrastructure and services in production-like mode
-
-
-
-networks:
-  collab-net:
-    driver: bridge  # All services share this network and can reach each other by service name
-
-volumes:
-  postgres-data:
-  redis-data:
-  kafka-data:
-  zookeeper-data:
-
 services:
-
-  # ── INFRASTRUCTURE ────────────────────────────────────────────
 
   postgres:
     image: postgres:16-alpine
@@ -26,14 +9,14 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/local/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5434:5432"
+      - "5432:5432"
     networks:
       - collab-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
       start_period: 30s
 
   redis:
@@ -51,7 +34,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-      start_period: 30s 
+      start_period: 10s
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -67,7 +50,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 20s
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -77,28 +60,26 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Two listeners: internal (for services inside Docker) and external (for your host machine)
       KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false' # We create topics explicitly
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
     volumes:
       - kafka-data:/var/lib/kafka/data
     ports:
-      - "9093:9093" # Expose external port to host
+      - "9093:9093"
     networks:
       - collab-net
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
       timeout: 10s
-      retries: 10
-      start_period: 30s 
+      retries: 15
+      start_period: 30s
 
   kafka-init:
-    # One-shot container that creates all Kafka topics then exits
     image: confluentinc/cp-kafka:7.6.0
     depends_on:
       kafka:
@@ -109,55 +90,74 @@ services:
       - ./infra/local/kafka/topics.sh:/topics.sh
     entrypoint: ["/bin/bash", "/topics.sh"]
 
-  # ── SERVICES ──────────────────────────────────────────────────
+  # ── APPLICATION SERVICES ──────────────────────────────────────
 
   api-gateway:
     build:
       context: .
       dockerfile: services/api-gateway/Dockerfile
+      target: development                  # ← use dev stage
+    command: >
+      sh -c "cd /app/services/api-gateway &&
+             npx ts-node-dev --respawn --transpile-only src/index.ts"
     environment:
       PORT: 3000
       AUTH_SERVICE_URL: http://auth-service:3001
       COLLAB_SERVICE_URL: http://collaboration-service:3002
       DOCUMENT_SERVICE_URL: http://document-service:3003
+      PRESENCE_SERVICE_URL: http://presence-service:3004
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkey-changeinprod}
+      NODE_ENV: development
     ports:
       - "3000:3000"
-    
-       # The ONLY service exposed to the outside world
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - collab-net
-    restart: on-failure 
+    restart: on-failure
 
   auth-service:
     build:
       context: .
       dockerfile: services/auth-service/Dockerfile
+      target: development                  # ← use dev stage
+    command: >
+      sh -c "cd /app/services/auth-service &&
+             npx ts-node-dev --respawn --transpile-only src/index.ts"
     environment:
       PORT: 3001
       DATABASE_URL: postgresql://admin:secret@postgres:5432/auth_db
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkey-changeinprod}
       JWT_EXPIRES_IN: 7d
+      NODE_ENV: development
+    ports:
+      - "3001:3001"
     depends_on:
       postgres:
         condition: service_healthy
     networks:
-      - collab-net   # NOT exposed to host — only reachable via gateway
-    restart: on-failure 
+      - collab-net
+    restart: on-failure
 
   collaboration-service:
     build:
       context: .
       dockerfile: services/collaboration-service/Dockerfile
+      target: development                  # ← use dev stage
+    command: >
+      sh -c "cd /app/services/collaboration-service &&
+             npx ts-node-dev --respawn --transpile-only src/index.ts"
     environment:
       PORT: 3002
       REDIS_URL: redis://redis:6379
       KAFKA_BROKERS: kafka:9092
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkey-changeinprod}
+      CLIENT_URL: http://localhost:5173
+      NODE_ENV: development
+    ports:
+      - "3002:3002"
     depends_on:
       redis:
         condition: service_healthy
@@ -165,16 +165,23 @@ services:
         condition: service_completed_successfully
     networks:
       - collab-net
-    restart: on-failure 
+    restart: on-failure
 
   document-service:
     build:
       context: .
       dockerfile: services/document-service/Dockerfile
+      target: development                  # ← use dev stage
+    command: >
+      sh -c "cd /app/services/document-service &&
+             npx ts-node-dev --respawn --transpile-only src/index.ts"
     environment:
       PORT: 3003
       DATABASE_URL: postgresql://admin:secret@postgres:5432/document_db
       KAFKA_BROKERS: kafka:9092
+      NODE_ENV: development
+    ports:
+      - "3003:3003"
     depends_on:
       postgres:
         condition: service_healthy
@@ -182,19 +189,36 @@ services:
         condition: service_completed_successfully
     networks:
       - collab-net
-    restart: on-failure 
+    restart: on-failure
 
   presence-service:
     build:
       context: .
       dockerfile: services/presence-service/Dockerfile
+      target: development                  # ← use dev stage
+    command: >
+      sh -c "cd /app/services/presence-service &&
+             npx ts-node-dev --respawn --transpile-only src/index.ts"
     environment:
       PORT: 3004
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkey-changeinprod}
+      NODE_ENV: development
+    ports:
+      - "3004:3004"
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - collab-net
-    restart: on-failure 
+    restart: on-failure
+
+networks:
+  collab-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  zookeeper-data:
