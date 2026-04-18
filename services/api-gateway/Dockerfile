@@ -7,13 +7,14 @@ COPY packages/logger/package.json ./packages/logger/
 COPY packages/tracing/package.json ./packages/tracing/
 COPY services/api-gateway/package.json ./services/api-gateway/
 
+# Install ALL deps including devDependencies (needed for ts-node-dev)
 RUN npm install --workspace=services/api-gateway
 
 FROM base AS development
 COPY packages/ ./packages/
 COPY services/api-gateway/ ./services/api-gateway/
 WORKDIR /app/services/api-gateway
-EXPOSE 3000 9229
+EXPOSE 3000
 
 FROM base AS builder
 COPY packages/ ./packages/
@@ -24,7 +25,7 @@ RUN npm run build
 FROM node:20-alpine AS production
 WORKDIR /app
 COPY --from=builder /app/services/api-gateway/dist ./dist
-COPY --from=builder /app/services/api-gateway/node_modules ./node_modules
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 USER node
 EXPOSE 3000
