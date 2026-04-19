@@ -45,18 +45,11 @@ services:
       - zookeeper-data:/var/lib/zookeeper/data
     networks:
       - collab-net
-    healthcheck:
-      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181 | grep imok"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     depends_on:
-      zookeeper:
-        condition: service_healthy
+      - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -73,11 +66,11 @@ services:
     networks:
       - collab-net
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
       interval: 10s
       timeout: 10s
-      retries: 15
-      start_period: 30s
+      retries: 20
+      start_period: 90s
 
   kafka-init:
     image: confluentinc/cp-kafka:7.6.0
@@ -90,19 +83,17 @@ services:
       - ./infra/local/kafka/topics.sh:/topics.sh
     entrypoint: ["/bin/bash", "/topics.sh"]
 
-  # ── APPLICATION SERVICES ──────────────────────────────────────
-
   api-gateway:
     build:
       context: .
       dockerfile: services/api-gateway/Dockerfile
       target: development
     command: >
-       sh -c "
+      sh -c "
         until nc -z redis 6379; do sleep 1; done &&
         cd /app/services/api-gateway &&
         /app/node_modules/.bin/ts-node-dev --respawn --transpile-only src/index.ts
-       "
+      "
     environment:
       PORT: 3000
       AUTH_SERVICE_URL: http://auth-service:3001
@@ -127,11 +118,11 @@ services:
       dockerfile: services/auth-service/Dockerfile
       target: development
     command: >
-       sh -c "
+      sh -c "
         until nc -z postgres 5432; do sleep 1; done &&
         cd /app/services/auth-service &&
         /app/node_modules/.bin/ts-node-dev --respawn --transpile-only src/index.ts
-       "
+      "
     environment:
       PORT: 3001
       DATABASE_URL: postgresql://admin:secret@postgres:5432/auth_db
@@ -171,8 +162,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      kafka-init:
-        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
     networks:
       - collab-net
     restart: on-failure
@@ -199,8 +190,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kafka-init:
-        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
     networks:
       - collab-net
     restart: on-failure

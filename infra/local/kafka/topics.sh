@@ -1,32 +1,40 @@
 #!/bin/bash
+set -e
 
 KAFKA_BROKER="kafka:9092"
 
-echo "Waiting for Kafka to be ready..."
+echo "Waiting for Kafka port to open..."
+until nc -z kafka 9092; do
+  echo "  kafka:9092 not ready, waiting 3s..."
+  sleep 3
+done
 
-# Keep trying until kafka responds
+echo "Port open. Waiting for Kafka broker to be fully ready..."
 until kafka-broker-api-versions --bootstrap-server $KAFKA_BROKER 2>/dev/null; do
-  echo "Kafka not ready yet, retrying in 5s..."
+  echo "  Broker not ready yet, waiting 5s..."
   sleep 5
 done
 
-echo "Kafka is ready. Creating topics..."
+echo "Kafka ready. Creating topics..."
 
-create_topic() {
-  local topic=$1
-  local partitions=$2
-  kafka-topics --create \
-    --bootstrap-server $KAFKA_BROKER \
-    --topic $topic \
-    --partitions $partitions \
-    --replication-factor 1 \
-    --if-not-exists
-  echo "✅ Created topic: $topic"
-}
+kafka-topics --create --bootstrap-server $KAFKA_BROKER \
+  --topic document.changed --partitions 3 \
+  --replication-factor 1 --if-not-exists
+echo "✅ document.changed"
 
-create_topic "document.changed"   3
-create_topic "document.snapshot"  1
-create_topic "user.connected"     2
-create_topic "user.disconnected"  2
+kafka-topics --create --bootstrap-server $KAFKA_BROKER \
+  --topic document.snapshot --partitions 1 \
+  --replication-factor 1 --if-not-exists
+echo "✅ document.snapshot"
 
-echo "All Kafka topics created successfully"
+kafka-topics --create --bootstrap-server $KAFKA_BROKER \
+  --topic user.connected --partitions 2 \
+  --replication-factor 1 --if-not-exists
+echo "✅ user.connected"
+
+kafka-topics --create --bootstrap-server $KAFKA_BROKER \
+  --topic user.disconnected --partitions 2 \
+  --replication-factor 1 --if-not-exists
+echo "✅ user.disconnected"
+
+echo "All topics created successfully"

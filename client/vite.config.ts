@@ -17,13 +17,26 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',  // use 127.0.0.1 not localhost
         changeOrigin: true,
+        secure: false,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            console.log('proxy error', err)
+          })
+          proxy.on('proxyReq', (_proxyReq, req) => {
+            console.log('Sending request:', req.method, req.url)
+          })
+          proxy.on('proxyRes', (proxyRes, req) => {
+            console.log('Received response:', proxyRes.statusCode, req.url)
+          })
+        },
       },
       '/collab': {
-        target: 'http://localhost:3002',
-        ws: true,           // proxy WebSocket connections too
+        target: 'http://127.0.0.1:3002',
+        ws: true,
         changeOrigin: true,
+        secure: false,
       },
     },
   },
