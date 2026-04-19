@@ -1,10 +1,29 @@
+// services/auth-service/src/db/userRepository.ts
 import { Pool } from 'pg'
 import { User } from '@collab/shared-types'
 
-// One pool per service — never share DB connections across services
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+})
+
+// Retry connecting up to 10 times with 3 second gaps.
+// Handles the case where postgres is healthy but not yet
+// accepting connections from this specific container.
+export async function waitForDb(retries = 10, delayMs = 3000): Promise<void> {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      await pool.query('SELECT 1')
+      return
+    } catch (err: any) {
+      console.log(`DB connection attempt ${i}/${retries} failed: ${err.message}`)
+      if (i === retries) throw err
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
+}
 
 export async function createTables() {
+  await waitForDb()   // ← wait before trying to create tables
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id          UUID PRIMARY KEY,

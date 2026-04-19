@@ -9,7 +9,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/local/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5435:5432"
+      - "5432:5432"
     networks:
       - collab-net
     healthcheck:
@@ -128,7 +128,7 @@ services:
              npx ts-node-dev --respawn --transpile-only src/index.ts"
     environment:
       PORT: 3001
-      DATABASE_URL: postgresql://admin:secret@postgres:5432/auth_db
+      DATABASE_URL: postgresql://admin:secret@postgres:5435/auth_db
       JWT_SECRET: ${JWT_SECRET:-supersecretjwtkey-changeinprod}
       JWT_EXPIRES_IN: 7d
       NODE_ENV: development

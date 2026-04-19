@@ -80,3 +80,4 @@ export async function getLatestSnapshot(documentId: string) {
   )
   return rows[0]
 }
+
