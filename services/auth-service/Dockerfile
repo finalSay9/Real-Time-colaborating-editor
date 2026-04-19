@@ -1,19 +1,34 @@
 FROM node:20-alpine AS base
+
+# Install netcat for wait scripts
+RUN apk add --no-cache netcat-openbsd
+
 WORKDIR /app
 
+# Copy workspace root package.json so npm knows about workspaces
 COPY package.json ./
+
+# Copy all shared packages
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY packages/logger/package.json ./packages/logger/
 COPY packages/tracing/package.json ./packages/tracing/
+
+# Copy this service's package.json
 COPY services/auth-service/package.json ./services/auth-service/
 
-# Install ALL deps including devDependencies (needed for ts-node-dev)
-RUN npm install --workspace=services/auth-service
+# Install ALL dependencies including devDependencies
+# --include=dev ensures ts-node-dev and typescript are installed
+RUN npm install --workspaces --include=dev --ignore-scripts
 
 FROM base AS development
+# Copy source files
 COPY packages/ ./packages/
 COPY services/auth-service/ ./services/auth-service/
 WORKDIR /app/services/auth-service
+
+# Verify ts-node-dev is available
+RUN ls node_modules/.bin/ts-node-dev || echo "WARNING: ts-node-dev not found"
+
 EXPOSE 3001
 
 FROM base AS builder

@@ -9,7 +9,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/local/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5435:5432"
     networks:
       - collab-net
     healthcheck:
@@ -46,11 +46,11 @@ services:
     networks:
       - collab-net
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181 | grep imok"]
       interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
@@ -96,10 +96,13 @@ services:
     build:
       context: .
       dockerfile: services/api-gateway/Dockerfile
-      target: development                  # ← use dev stage
+      target: development
     command: >
-      sh -c "cd /app/services/api-gateway &&
-             npx ts-node-dev --respawn --transpile-only src/index.ts"
+       sh -c "
+        until nc -z redis 6379; do sleep 1; done &&
+        cd /app/services/api-gateway &&
+        /app/node_modules/.bin/ts-node-dev --respawn --transpile-only src/index.ts
+       "
     environment:
       PORT: 3000
       AUTH_SERVICE_URL: http://auth-service:3001
@@ -122,13 +125,16 @@ services:
     build:
       context: .
       dockerfile: services/auth-service/Dockerfile
-      target: development                  # ← use dev stage
+      target: development
     command: >
-      sh -c "cd /app/services/auth-service &&
-             npx ts-node-dev --respawn --transpile-only src/index.ts"
+       sh -c "
+        until nc -z postgres 5432; do sleep 1; done &&
+        cd /app/services/auth-service &&
+        /app/node_modules/.bin/ts-node-dev --respawn --transpile-only src/index.ts
+       "
     environment:
       PORT: 3001
-      DATABASE_URL: postgresql://admin:secret@postgres:5435/auth_db
+      DATABASE_URL: postgresql://admin:secret@postgres:5432/auth_db
       JWT_SECRET: ${JWT_SECRET:-supersecretjwtkey-changeinprod}
       JWT_EXPIRES_IN: 7d
       NODE_ENV: development
@@ -145,10 +151,14 @@ services:
     build:
       context: .
       dockerfile: services/collaboration-service/Dockerfile
-      target: development                  # ← use dev stage
+      target: development
     command: >
-      sh -c "cd /app/services/collaboration-service &&
-             npx ts-node-dev --respawn --transpile-only src/index.ts"
+      sh -c "
+        until nc -z redis 6379; do sleep 1; done &&
+        until nc -z kafka 9092; do sleep 2; done &&
+        cd /app/services/collaboration-service &&
+        /app/node_modules/.bin/ts-node-dev --respawn --transpile-only src/index.ts
+      "
     environment:
       PORT: 3002
       REDIS_URL: redis://redis:6379
@@ -171,10 +181,14 @@ services:
     build:
       context: .
       dockerfile: services/document-service/Dockerfile
-      target: development                  # ← use dev stage
+      target: development
     command: >
-      sh -c "cd /app/services/document-service &&
-             npx ts-node-dev --respawn --transpile-only src/index.ts"
+      sh -c "
+        until nc -z postgres 5432; do sleep 1; done &&
+        until nc -z kafka 9092; do sleep 2; done &&
+        cd /app/services/document-service &&
+        /app/node_modules/.bin/ts-node-dev --respawn --transpile-only src/index.ts
+      "
     environment:
       PORT: 3003
       DATABASE_URL: postgresql://admin:secret@postgres:5432/document_db
@@ -195,10 +209,13 @@ services:
     build:
       context: .
       dockerfile: services/presence-service/Dockerfile
-      target: development                  # ← use dev stage
+      target: development
     command: >
-      sh -c "cd /app/services/presence-service &&
-             npx ts-node-dev --respawn --transpile-only src/index.ts"
+      sh -c "
+        until nc -z redis 6379; do sleep 1; done &&
+        cd /app/services/presence-service &&
+        /app/node_modules/.bin/ts-node-dev --respawn --transpile-only src/index.ts
+      "
     environment:
       PORT: 3004
       REDIS_URL: redis://redis:6379
