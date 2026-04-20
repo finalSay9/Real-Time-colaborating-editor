@@ -27,13 +27,23 @@ const proxy = (target: string) =>
     changeOrigin: true,
     on: {
       proxyReq: (proxyReq, req) => {
-        // Forward identity so services don't re-verify JWT
+        // ✅ Forward JSON body (CRITICAL FIX)
+        if ((req as any).body && Object.keys((req as any).body).length) {
+          const bodyData = JSON.stringify((req as any).body)
+          proxyReq.setHeader('Content-Type', 'application/json')
+          proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData))
+          proxyReq.write(bodyData)
+        }
+
+        // Forward identity
         if ((req as any).user) {
           proxyReq.setHeader('x-user-id', (req as any).user.userId)
           proxyReq.setHeader('x-user-email', (req as any).user.email)
         }
+
         proxyReq.setHeader('x-trace-id', req.headers['x-trace-id'] ?? '')
       },
+
       error: (err, req, res) => {
         logger.error({ err, path: req.url }, 'Proxy error')
         ;(res as any).status(502).json({ error: 'Service unavailable' })
