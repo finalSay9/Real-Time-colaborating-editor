@@ -62,22 +62,10 @@ services:
       - collab-net
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 30s
-
-  kafka-init:
-    image: confluentinc/cp-kafka:7.6.0
-    depends_on:
-      kafka:
-        condition: service_healthy
-    networks:
-      - collab-net
-    volumes:
-      - ./infra/local/kafka/topics.sh:/topics.sh
-    entrypoint: ["/bin/bash", "/topics.sh"]
-
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 120s    # ← give kafka 2 minutes before checking
   api-gateway:
     build:
       context: .
