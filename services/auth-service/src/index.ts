@@ -1,4 +1,4 @@
-import 'dotenv/config'   // ← must be first, before any other imports
+import 'dotenv/config'
 import express from 'express'
 import { createTables } from './db/userRepository'
 import { createLogger } from '@collab/logger'
@@ -10,9 +10,13 @@ const logger = createLogger('auth-service')
 const PORT = process.env.PORT ?? 3001
 
 app.use(express.json())
+
 app.get('/health', (_, res) => res.json({ status: 'ok' }))
-app.use('/api/auth', registerRoute)
-app.use('/api/auth', loginRoute)
+
+// Mount at root — gateway strips /api/auth prefix before forwarding
+// so auth-service receives /register and /login directly
+app.use('/', registerRoute)
+app.use('/', loginRoute)
 
 async function start() {
   try {
