@@ -1,28 +1,30 @@
+// services/api-gateway/src/middleware/rateLimit.ts
 import { Request, Response, NextFunction } from 'express'
 import { Redis } from 'ioredis'
+import { createLogger } from '@collab/logger'
+const logger = createLogger('api-gateway')
 
 const redis = new Redis(process.env.REDIS_URL!)
 
-// Sliding window rate limit: 100 requests per minute per user.
-// Uses Redis INCR + EXPIRE — atomic operations safe across
-// multiple gateway instances.
 export async function rateLimit(req: Request, res: Response, next: NextFunction) {
-  const userId = req.user?.userId ?? req.ip
-  const key = `rate:${userId}:${Math.floor(Date.now() / 60000)}`
+  // Use userId if authenticated, otherwise fall back to IP
+  const identifier = req.user?.userId ?? req.ip ?? 'anonymous'
+  const window = Math.floor(Date.now() / 60000)
+  const key = `rate:${identifier}:${window}`
 
-  const count = await redis.incr(key)
+  try {
+    const count = await redis.incr(key)
+    if (count === 1) await redis.expire(key, 60)
 
-  // Set expiry only on first request in the window
-  if (count === 1) await redis.expire(key, 60)
+    if (count > 100) {
+      return res.status(429).json({ error: 'Too many requests', retryAfter: 60 })
+    }
 
-  if (count > 100) {
-    return res.status(429).json({
-      error: 'Too many requests',
-      retryAfter: 60,
-    })
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, 100 - count))
+    next()
+  } catch (err) {
+    // If Redis is down, let the request through rather than blocking everything
+    logger.warn('Rate limit Redis error, skipping')
+    next()
   }
-
-  // Let downstream services see current usage
-  res.setHeader('X-RateLimit-Remaining', Math.max(0, 100 - count))
-  next()
 }
