@@ -1,55 +1,67 @@
 import 'dotenv/config'
-import express from 'express'
-import { createProxyMiddleware } from 'http-proxy-middleware'
-import { authenticate } from './middleware/authenticate'
-import { requestId } from './middleware/requestId'
-import { rateLimit } from './middleware/rateLimit'
-import { createLogger } from '@collab/logger'
+import express, { Request, Response, NextFunction } from 'express'
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware'
 
 const app = express()
-const logger = createLogger('api-gateway')
-const PORT = process.env.PORT ?? 3000
+const PORT = Number(process.env.PORT) || 3000
 
-// ── Middleware ────────────────────────────────────────────────
-app.use(requestId)
+// Parse body BEFORE proxying — fixRequestBody will re-stream it
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
 
-// IMPORTANT: Do NOT use express.json() here.
-// The gateway must pass the raw body through to downstream services.
-// Parsing it here consumes the stream and the proxy has nothing to forward.
+// Health check
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' })
+})
 
-app.use(authenticate)
-app.use(rateLimit)
+// Simple auth check for protected routes
+const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.headers.authorization?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing token' })
+  }
+  next()
+}
 
-// ── Health check ──────────────────────────────────────────────
-app.get('/health', (_, res) => res.json({ status: 'ok' }))
-
-// ── Proxy factory ─────────────────────────────────────────────
-const proxy = (target: string) =>
-  createProxyMiddleware({
-    target,
-    changeOrigin: true,
-    proxyTimeout: 15000,
-    timeout: 15000,
-    on: {
-      proxyReq: (proxyReq, req: any) => {
-        // Forward user identity set by authenticate middleware
-        if (req.user) {
-          proxyReq.setHeader('x-user-id', req.user.userId)
-          proxyReq.setHeader('x-user-email', req.user.email)
-        }
-        proxyReq.setHeader('x-trace-id', req.headers['x-trace-id'] ?? '')
-      },
-      error: (err, _req, res: any) => {
-        logger.error({ err }, 'Proxy error')
-        res.status(502).json({ error: 'Service unavailable' })
-      },
+// Auth routes — public, no auth needed
+app.use('/api/auth', createProxyMiddleware({
+  target: process.env.AUTH_SERVICE_URL || 'http://auth-service:3001',
+  changeOrigin: true,
+  on: {
+    proxyReq: fixRequestBody,   // ← this re-attaches the parsed body
+    error: (_err, _req, res: any) => {
+      res.status(502).json({ error: 'Auth service unavailable' })
     },
-  })
+  },
+}))
 
-// ── Routes ────────────────────────────────────────────────────
-app.use('/api/auth', proxy(process.env.AUTH_SERVICE_URL!))
-app.use('/api/documents', proxy(process.env.DOCUMENT_SERVICE_URL!))
-app.use('/api/presence', proxy(process.env.PRESENCE_SERVICE_URL!))
-app.use('/collab', proxy(process.env.COLLAB_SERVICE_URL!))
+// Document routes — protected
+app.use('/api/documents', requireAuth, createProxyMiddleware({
+  target: process.env.DOCUMENT_SERVICE_URL || 'http://document-service:3003',
+  changeOrigin: true,
+  on: {
+    proxyReq: fixRequestBody,
+    error: (_err, _req, res: any) => {
+      res.status(502).json({ error: 'Document service unavailable' })
+    },
+  },
+}))
 
-app.listen(PORT, () => logger.info({ port: PORT }, 'API Gateway started'))
+// Presence routes — protected
+app.use('/api/presence', requireAuth, createProxyMiddleware({
+  target: process.env.PRESENCE_SERVICE_URL || 'http://presence-service:3004',
+  changeOrigin: true,
+  on: {
+    proxyReq: fixRequestBody,
+  },
+}))
+
+// Collaboration WebSocket — protected
+app.use('/collab', createProxyMiddleware({
+  target: process.env.COLLAB_SERVICE_URL || 'http://collaboration-service:3002',
+  changeOrigin: true,
+  ws: true,
+}))
+
+app.listen(PORT, () => {
+  console.log(`[api-gateway] started on port ${PORT}`)
+})

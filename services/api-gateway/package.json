@@ -7,13 +7,13 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@collab/logger": "*",
+    "@collab/shared-types": "*",
     "dotenv": "^17.4.2",
     "express": "^4.22.1",
-    "http-proxy-middleware": "^3.0.0",
+    "http-proxy-middleware": "^3.0.5",
     "ioredis": "^5.3.2",
-    "jsonwebtoken": "^9.0.2",
-    "@collab/logger": "*",
-    "@collab/shared-types": "*"
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.25",
