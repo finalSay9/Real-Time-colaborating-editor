@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Collaboration from '@tiptap/extension-collaboration'
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
 import Placeholder from '@tiptap/extension-placeholder'
 import * as Y from 'yjs'
-import { WebsocketProvider } from 'y-websocket'
+import { io, Socket } from 'socket.io-client'
 import axios from 'axios'
 import { useAuthStore } from '@/store/authStore'
 import {
@@ -14,18 +13,12 @@ import {
   Bold, Italic, List, Heading2, Loader2
 } from 'lucide-react'
 
-interface Document {
-  id: string
-  title: string
-}
+interface Document { id: string; title: string }
+interface ActiveUser { userId: string; userName: string }
 
-// Assign a color per user deterministically
-const USER_COLORS = [
-  '#7c3aed', '#db2777', '#0891b2',
-  '#059669', '#d97706', '#dc2626',
-]
+const USER_COLORS = ['#7c3aed','#db2777','#0891b2','#059669','#d97706','#dc2626']
 
-function getUserColor(userId: string): string {
+function getUserColor(userId: string) {
   let hash = 0
   for (let i = 0; i < userId.length; i++) {
     hash = userId.charCodeAt(i) + ((hash << 5) - hash)
@@ -40,17 +33,15 @@ export default function EditorPage() {
 
   const [doc, setDoc] = useState<Document | null>(null)
   const [connected, setConnected] = useState(false)
-  const [activeUsers, setActiveUsers] = useState<string[]>([])
+  const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([])
   const [showUsers, setShowUsers] = useState(false)
+  const [editorReady, setEditorReady] = useState(false)
 
-  // These refs hold the Yjs doc and provider —
-  // created once per document, never recreated
-  const [ydoc] = useState(() => new Y.Doc())
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null)
+  const ydocRef = useRef<Y.Doc>(new Y.Doc())
+  const socketRef = useRef<Socket | null>(null)
 
   const userColor = user?.id ? getUserColor(user.id) : '#7c3aed'
 
-  // Fetch document metadata
   useEffect(() => {
     if (!token || !id) return
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
@@ -59,76 +50,101 @@ export default function EditorPage() {
       .catch(() => navigate('/dashboard'))
   }, [id, token])
 
-  // Set up WebSocket provider once we have the doc ID and token
   useEffect(() => {
     if (!id || !token) return
 
-    // y-websocket provider — this handles the Yjs sync protocol
-    // AND the awareness protocol (cursor positions)
-    const wsProvider = new WebsocketProvider(
-      `ws://localhost:3002`,   // collaboration service
-      id,                       // room name = document ID
-      ydoc,
-      {
-        params: { token },      // pass JWT as query param
+    const socket = io('/', {
+      path: '/socket.io',
+      auth: { token },
+      transports: ['websocket', 'polling'],
+    })
+
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      setConnected(true)
+      socket.emit('doc:join', {
+        documentId: id,
+        userName: user?.name ?? 'Anonymous',
+      })
+    })
+
+    socket.on('disconnect', () => setConnected(false))
+
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message)
+    })
+
+    socket.on('doc:full-state', ({ state }: { state: number[] }) => {
+      Y.applyUpdate(ydocRef.current, new Uint8Array(state))
+      setEditorReady(true)
+    })
+
+    // ✅ Fixed: use 'update' not 'state'
+    socket.on('doc:update', ({ update }: { update: number[] }) => {
+      Y.applyUpdate(ydocRef.current, new Uint8Array(update), 'remote')
+    })
+
+    socket.on('user:joined', (data: ActiveUser) => {
+      setActiveUsers(prev =>
+        prev.find(u => u.userId === data.userId) ? prev : [...prev, data]
+      )
+    })
+
+    socket.on('user:left', ({ userId }: { userId: string }) => {
+      setActiveUsers(prev => prev.filter(u => u.userId !== userId))
+    })
+
+    const handleUpdate = (update: Uint8Array, origin: unknown) => {
+      if (origin !== 'remote') {
+        socket.emit('doc:update', {
+          documentId: id,
+          update: Array.from(update),
+        })
       }
-    )
+    }
 
-    wsProvider.on('status', ({ status }: { status: string }) => {
-      setConnected(status === 'connected')
-    })
+    ydocRef.current.on('update', handleUpdate)
 
-    wsProvider.awareness.on('change', () => {
-      const states = Array.from(wsProvider.awareness.getStates().values())
-      const users = states
-        .filter((s: any) => s.user && s.user.name)
-        .map((s: any) => s.user.name)
-      setActiveUsers(users)
-    })
-
-    // Set our own awareness state (name + cursor color)
-    wsProvider.awareness.setLocalStateField('user', {
-      name: user?.name ?? 'Anonymous',
-      color: userColor,
-    })
-
-    setProvider(wsProvider)
+    // Show editor after 2s even if server doesn't send full-state
+    // (handles empty new documents)
+    const timer = setTimeout(() => setEditorReady(true), 2000)
 
     return () => {
-      wsProvider.destroy()
-      setProvider(null)
+      clearTimeout(timer)
+      ydocRef.current.off('update', handleUpdate)
+      socket.disconnect()
+      socketRef.current = null
       setConnected(false)
+      setEditorReady(false)
     }
   }, [id, token])
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ history: false }),
-      Collaboration.configure({ document: ydoc }),
-      // Only add CollaborationCursor once provider exists
-      ...(provider ? [
-        CollaborationCursor.configure({
-          provider,                        // ← real provider with real awareness
-          user: {
-            name: user?.name ?? 'Anonymous',
-            color: userColor,
-          },
-        }),
-      ] : []),
-      Placeholder.configure({ placeholder: 'Start writing…' }),
+      StarterKit.configure({
+        history: false,    // Collaboration extension handles undo/redo
+      }),
+      Collaboration.configure({
+        document: ydocRef.current,
+      }),
+      Placeholder.configure({
+        placeholder: 'Start writing…',
+      }),
     ],
     editorProps: {
       attributes: { class: 'tiptap-editor focus:outline-none' },
     },
-  }, [provider]) // ← recreate editor when provider is ready
+  })
 
-  // Loading state
-  if (!doc || !provider) {
+  if (!doc || !editorReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-          <p className="text-sm text-gray-500">Connecting to document…</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {!doc ? 'Loading document…' : 'Connecting…'}
+          </p>
         </div>
       </div>
     )
@@ -137,7 +153,6 @@ export default function EditorPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-950 flex flex-col">
 
-      {/* Top bar */}
       <header className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-4xl mx-auto px-4 h-14 flex items-center gap-3">
 
@@ -153,86 +168,57 @@ export default function EditorPage() {
           </h1>
 
           <div className="flex items-center gap-2">
-            {/* Connection badge */}
             <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full ${
               connected
                 ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                : 'bg-red-50 dark:bg-red-900/20 text-red-500'
+                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
             }`}>
               {connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-              <span className="hidden sm:block">{connected ? 'Live' : 'Offline'}</span>
+              <span className="hidden sm:block">{connected ? 'Live' : 'Connecting…'}</span>
             </div>
 
-            {/* Active users */}
             <button
               onClick={() => setShowUsers(!showUsers)}
-              className="relative flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"
             >
               <Users className="w-3 h-3" />
-              <span>{activeUsers.length || 1}</span>
+              <span>{activeUsers.length + 1}</span>
             </button>
 
             {showUsers && (
               <div className="absolute top-14 right-4 w-48 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-lg p-3 z-30">
                 <p className="text-xs font-medium text-gray-500 mb-2">Active now</p>
-                <div className="flex items-center gap-2 py-1">
+                <div className="flex items-center gap-2 py-1.5">
                   <div className="w-2 h-2 rounded-full" style={{ background: userColor }} />
                   <span className="text-sm text-gray-800 dark:text-gray-200">
                     {user?.name} <span className="text-gray-400">(you)</span>
                   </span>
                 </div>
-                {activeUsers
-                  .filter(n => n !== user?.name)
-                  .map((name, i) => (
-                    <div key={i} className="flex items-center gap-2 py-1">
-                      <div className="w-2 h-2 rounded-full bg-indigo-400" />
-                      <span className="text-sm text-gray-800 dark:text-gray-200">{name}</span>
-                    </div>
-                  ))}
+                {activeUsers.map(u => (
+                  <div key={u.userId} className="flex items-center gap-2 py-1.5">
+                    <div className="w-2 h-2 rounded-full bg-indigo-400" />
+                    <span className="text-sm text-gray-800 dark:text-gray-200">{u.userName}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Formatting toolbar */}
         {editor && (
           <div className="max-w-4xl mx-auto px-4 pb-2 flex items-center gap-1 overflow-x-auto">
             {[
-              {
-                icon: <Bold className="w-4 h-4" />,
-                action: () => editor.chain().focus().toggleBold().run(),
-                active: editor.isActive('bold'),
-                title: 'Bold',
-              },
-              {
-                icon: <Italic className="w-4 h-4" />,
-                action: () => editor.chain().focus().toggleItalic().run(),
-                active: editor.isActive('italic'),
-                title: 'Italic',
-              },
-              {
-                icon: <Heading2 className="w-4 h-4" />,
-                action: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-                active: editor.isActive('heading', { level: 2 }),
-                title: 'Heading',
-              },
-              {
-                icon: <List className="w-4 h-4" />,
-                action: () => editor.chain().focus().toggleBulletList().run(),
-                active: editor.isActive('bulletList'),
-                title: 'List',
-              },
-            ].map((tool) => (
-              <button
-                key={tool.title}
-                onClick={tool.action}
-                title={tool.title}
+              { icon: <Bold className="w-4 h-4" />, action: () => editor.chain().focus().toggleBold().run(), active: editor.isActive('bold'), title: 'Bold' },
+              { icon: <Italic className="w-4 h-4" />, action: () => editor.chain().focus().toggleItalic().run(), active: editor.isActive('italic'), title: 'Italic' },
+              { icon: <Heading2 className="w-4 h-4" />, action: () => editor.chain().focus().toggleHeading({ level: 2 }).run(), active: editor.isActive('heading', { level: 2 }), title: 'Heading' },
+              { icon: <List className="w-4 h-4" />, action: () => editor.chain().focus().toggleBulletList().run(), active: editor.isActive('bulletList'), title: 'List' },
+            ].map(tool => (
+              <button key={tool.title} onClick={tool.action} title={tool.title}
                 className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
                   tool.active
                     ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600'
                     : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'
-                }`}
-              >
+                }`}>
                 {tool.icon}
               </button>
             ))}
@@ -240,9 +226,6 @@ export default function EditorPage() {
         )}
       </header>
 
-      
-
-      {/* Editor */}
       <div className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-8">
         <EditorContent
           editor={editor}
