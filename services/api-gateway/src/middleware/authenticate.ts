@@ -1,9 +1,8 @@
+// services/api-gateway/src/middleware/authenticate.ts
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { TokenPayload } from '@collab/shared-types'
 
-// Attach decoded user to every request so downstream
-// middleware and routes don't need to re-verify
 declare global {
   namespace Express {
     interface Request {
@@ -12,17 +11,15 @@ declare global {
   }
 }
 
-// Routes that don't require a token
-const PUBLIC_ROUTES = [
-  { path: '/api/auth/login', method: 'POST' },
-  { path: '/api/auth/register', method: 'POST' },
-  { path: '/health', method: 'GET' },
+const PUBLIC_PATHS = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/health',
 ]
 
 export function authenticate(req: Request, res: Response, next: NextFunction) {
-  const isPublic = PUBLIC_ROUTES.some(
-    (r) => r.path === req.path && r.method === req.method
-  )
+  // Check if this path is public
+  const isPublic = PUBLIC_PATHS.some((path) => req.path.startsWith(path))
   if (isPublic) return next()
 
   const authHeader = req.headers.authorization
