@@ -7,7 +7,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import * as Y from 'yjs'
 import { io, Socket } from 'socket.io-client'
 import axios from 'axios'
-import { useAuthStore } from '@/store/authStore'
+import { useAuthStore } from '../store/authStore'
 import {
   ArrowLeft, Users, Wifi, WifiOff,
   Bold, Italic, List, Heading2, Loader2
@@ -123,7 +123,7 @@ export default function EditorPage() {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        history: false,    // Collaboration extension handles undo/redo
+        undoRedo: false,
       }),
       Collaboration.configure({
         document: ydocRef.current,
@@ -133,7 +133,8 @@ export default function EditorPage() {
       }),
     ],
     editorProps: {
-      attributes: { class: 'tiptap-editor focus:outline-none' },
+      attributes: { class: 'tiptap-editor focus:outline-none',
+        style: 'white-space: pre-wrap', },
     },
   })
 
