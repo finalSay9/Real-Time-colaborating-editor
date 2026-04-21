@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import { authenticate } from './middleware/authenticate'
@@ -9,53 +10,46 @@ const app = express()
 const logger = createLogger('api-gateway')
 const PORT = process.env.PORT ?? 3000
 
-// Order matters — requestId first so traceId exists for all logging
+// ── Middleware ────────────────────────────────────────────────
 app.use(requestId)
-app.use(express.json())
+
+// IMPORTANT: Do NOT use express.json() here.
+// The gateway must pass the raw body through to downstream services.
+// Parsing it here consumes the stream and the proxy has nothing to forward.
+
 app.use(authenticate)
 app.use(rateLimit)
 
-// Health check (public, no auth)
+// ── Health check ──────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok' }))
 
-// Proxy each path to its service.
-// The gateway forwards the traceId and user headers
-// so downstream services have full context.
+// ── Proxy factory ─────────────────────────────────────────────
 const proxy = (target: string) =>
   createProxyMiddleware({
     target,
     changeOrigin: true,
+    proxyTimeout: 15000,
+    timeout: 15000,
     on: {
-      proxyReq: (proxyReq, req) => {
-        // ✅ Forward JSON body (CRITICAL FIX)
-        if ((req as any).body && Object.keys((req as any).body).length) {
-          const bodyData = JSON.stringify((req as any).body)
-          proxyReq.setHeader('Content-Type', 'application/json')
-          proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData))
-          proxyReq.write(bodyData)
+      proxyReq: (proxyReq, req: any) => {
+        // Forward user identity set by authenticate middleware
+        if (req.user) {
+          proxyReq.setHeader('x-user-id', req.user.userId)
+          proxyReq.setHeader('x-user-email', req.user.email)
         }
-
-        // Forward identity
-        if ((req as any).user) {
-          proxyReq.setHeader('x-user-id', (req as any).user.userId)
-          proxyReq.setHeader('x-user-email', (req as any).user.email)
-        }
-
         proxyReq.setHeader('x-trace-id', req.headers['x-trace-id'] ?? '')
       },
-
-      error: (err, req, res) => {
-        logger.error({ err, path: req.url }, 'Proxy error')
-        ;(res as any).status(502).json({ error: 'Service unavailable' })
+      error: (err, _req, res: any) => {
+        logger.error({ err }, 'Proxy error')
+        res.status(502).json({ error: 'Service unavailable' })
       },
     },
   })
 
+// ── Routes ────────────────────────────────────────────────────
 app.use('/api/auth', proxy(process.env.AUTH_SERVICE_URL!))
 app.use('/api/documents', proxy(process.env.DOCUMENT_SERVICE_URL!))
 app.use('/api/presence', proxy(process.env.PRESENCE_SERVICE_URL!))
-
-// WebSocket traffic for collaboration gets proxied with ws support
 app.use('/collab', proxy(process.env.COLLAB_SERVICE_URL!))
 
 app.listen(PORT, () => logger.info({ port: PORT }, 'API Gateway started'))
